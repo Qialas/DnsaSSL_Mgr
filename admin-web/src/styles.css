@@ -101,6 +101,16 @@ body {
   display: block;
 }
 
+.qdl-log-detail-text {
+  max-height: 220px;
+  margin-bottom: 0 !important;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
 .qdl-action-tag {
   display: inline-flex;
   align-items: center;

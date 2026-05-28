@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,12 +88,12 @@ func (h *CertificateHandler) Create(c *gin.Context) {
 
 	if err := h.startCertificateFlow(c.Request.Context(), &row, domain, account); err != nil {
 		h.db.Model(&row).Updates(map[string]any{"status": certStatusFailed, "provider_status_msg": err.Error()})
-		h.logCertificate(row, account, "apply", "failed", err.Error())
+		h.logCertificate(row, account, "apply", "failed", err.Error(), traceFromError(err))
 		fail(c, http.StatusBadRequest, "证书申请失败："+err.Error())
 		return
 	}
 	h.db.First(&row, row.ID)
-	h.logCertificate(row, account, "apply", "success", "证书申请已创建，DNS验证记录已添加")
+	h.logCertificate(row, account, "apply", "success", "证书申请已创建，DNS验证记录已添加", nil)
 	ok(c, row)
 }
 
@@ -162,12 +163,12 @@ func (h *CertificateHandler) Submit(c *gin.Context) {
 		}
 		if err := h.startCertificateFlow(c.Request.Context(), &row, domain, account); err != nil {
 			h.db.Model(&row).Updates(map[string]any{"status": certStatusFailed, "provider_status_msg": err.Error()})
-			h.logCertificate(row, account, "apply", "failed", err.Error())
+			h.logCertificate(row, account, "apply", "failed", err.Error(), traceFromError(err))
 			fail(c, http.StatusBadRequest, "创建腾讯云申请单失败："+err.Error())
 			return
 		}
 		h.db.First(&row, row.ID)
-		h.logCertificate(row, account, "apply", "success", "证书申请已创建，DNS验证记录已添加")
+		h.logCertificate(row, account, "apply", "success", "证书申请已创建，DNS验证记录已添加", nil)
 	}
 
 	if row.Status == certStatusIssued || row.Status == certStatusRevoked || row.Status == certStatusCanceled {
@@ -179,7 +180,7 @@ func (h *CertificateHandler) Submit(c *gin.Context) {
 
 	if row.AuthRecordID == "" && row.Status != certStatusSubmitted {
 		if err := h.ensureTencentAuthRecord(c.Request.Context(), &row, account); err != nil {
-			h.logCertificate(row, account, "apply", "failed", err.Error())
+			h.logCertificate(row, account, "apply", "failed", err.Error(), traceFromError(err))
 			fail(c, http.StatusBadRequest, "补全DNS验证记录失败："+err.Error())
 			return
 		}
@@ -192,7 +193,7 @@ func (h *CertificateHandler) Submit(c *gin.Context) {
 		h.db.Model(&row).Updates(map[string]any{"status": certStatusSubmitted, "provider_status_msg": "DNS验证记录已添加，等待CA验证"})
 		h.db.First(&row, row.ID)
 	}
-	h.logCertificate(row, account, "submit", "success", "DNS验证记录已添加，等待CA验证")
+	h.logCertificate(row, account, "submit", "success", "DNS验证记录已添加，等待CA验证", nil)
 	ok(c, row)
 }
 
@@ -211,20 +212,20 @@ func (h *CertificateHandler) Revoke(c *gin.Context) {
 	}
 	if row.Status == certStatusIssued {
 		if err := tencentSimpleCertificateAction(c.Request.Context(), account, "RevokeCertificate", row.ProviderCertificateID); err != nil {
-			h.logCertificate(row, account, "revoke", "failed", err.Error())
+			h.logCertificate(row, account, "revoke", "failed", err.Error(), traceFromError(err))
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 		h.db.Model(&row).Updates(map[string]any{"status": certStatusRevoked, "provider_status_msg": "已提交吊销请求"})
-		h.logCertificate(row, account, "revoke", "success", "已提交吊销请求")
+		h.logCertificate(row, account, "revoke", "success", "已提交吊销请求", nil)
 	} else {
 		if err := tencentSimpleCertificateAction(c.Request.Context(), account, "CancelCertificateOrder", row.ProviderCertificateID); err != nil {
-			h.logCertificate(row, account, "revoke", "failed", err.Error())
+			h.logCertificate(row, account, "revoke", "failed", err.Error(), traceFromError(err))
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
 		h.db.Model(&row).Updates(map[string]any{"status": certStatusCanceled, "provider_status_msg": "已取消证书订单"})
-		h.logCertificate(row, account, "revoke", "success", "已取消证书订单")
+		h.logCertificate(row, account, "revoke", "success", "已取消证书订单", nil)
 	}
 	h.db.First(&row, row.ID)
 	ok(c, row)
@@ -454,8 +455,8 @@ func (h *CertificateHandler) validateRequest(c *gin.Context, req certificateRequ
 	return domain, account, true
 }
 
-func (h *CertificateHandler) logCertificate(row model.Certificate, account model.SSLAccount, action, status, message string) {
-	_ = h.db.Create(&model.CertificateLog{
+func (h *CertificateHandler) logCertificate(row model.Certificate, account model.SSLAccount, action, status, message string, trace *tencentRequestTrace) {
+	log := model.CertificateLog{
 		CertificateID:         row.ID,
 		ProviderCertificateID: row.ProviderCertificateID,
 		CommonName:            row.CommonName,
@@ -463,7 +464,15 @@ func (h *CertificateHandler) logCertificate(row model.Certificate, account model
 		Provider:              account.Provider,
 		Status:                status,
 		Message:               message,
-	}).Error
+	}
+	if trace != nil {
+		log.RequestURL = trace.RequestURL
+		log.RequestMethod = trace.RequestMethod
+		log.RequestHeaders = trace.RequestHeaders
+		log.RequestBody = trace.RequestBody
+		log.ResponseBody = trace.ResponseBody
+	}
+	_ = h.db.Create(&log).Error
 }
 
 type tencentDetail struct {
@@ -500,6 +509,42 @@ type tencentError struct {
 	Message string `json:"Message"`
 }
 
+type tencentRequestTrace struct {
+	RequestURL     string
+	RequestMethod  string
+	RequestHeaders string
+	RequestBody    string
+	ResponseBody   string
+}
+
+type tencentTracedError struct {
+	err   error
+	trace *tencentRequestTrace
+}
+
+func (e *tencentTracedError) Error() string {
+	return e.err.Error()
+}
+
+func (e *tencentTracedError) Unwrap() error {
+	return e.err
+}
+
+func traceFromError(err error) *tencentRequestTrace {
+	var traced *tencentTracedError
+	if errors.As(err, &traced) {
+		return traced.trace
+	}
+	return nil
+}
+
+func withTencentTrace(err error, trace *tencentRequestTrace) error {
+	if err == nil {
+		return nil
+	}
+	return &tencentTracedError{err: err, trace: trace}
+}
+
 func tencentApplyCertificate(ctx context.Context, account model.SSLAccount, domain string) (string, error) {
 	var out struct {
 		Response struct {
@@ -516,10 +561,11 @@ func tencentApplyCertificate(ctx context.Context, account model.SSLAccount, doma
 		"ValidityPeriod": "3",
 		"Alias":          "QDL-" + domain,
 	}
-	if err := tencentSSLRequest(ctx, account, "ApplyCertificate", payload, &out); err != nil {
+	trace, err := tencentSSLRequest(ctx, account, "ApplyCertificate", payload, &out)
+	if err != nil {
 		return "", err
 	}
-	if err := tencentResponseErr(out.Response.Error); err != nil {
+	if err := tencentResponseErr(out.Response.Error, trace); err != nil {
 		return "", err
 	}
 	if out.Response.CertificateID == "" {
@@ -535,10 +581,11 @@ func tencentSimpleCertificateAction(ctx context.Context, account model.SSLAccoun
 			RequestID string        `json:"RequestId"`
 		} `json:"Response"`
 	}
-	if err := tencentSSLRequest(ctx, account, action, map[string]any{"CertificateId": certificateID}, &out); err != nil {
+	trace, err := tencentSSLRequest(ctx, account, action, map[string]any{"CertificateId": certificateID}, &out)
+	if err != nil {
 		return err
 	}
-	return tencentResponseErr(out.Response.Error)
+	return tencentResponseErr(out.Response.Error, trace)
 }
 
 func tencentDescribeCertificate(ctx context.Context, account model.SSLAccount, certificateID string) (*tencentDetail, error) {
@@ -557,10 +604,11 @@ func tencentDescribeCertificate(ctx context.Context, account model.SSLAccount, c
 			RequestID         string               `json:"RequestId"`
 		} `json:"Response"`
 	}
-	if err := tencentSSLRequest(ctx, account, "DescribeCertificate", map[string]any{"CertificateId": certificateID}, &out); err != nil {
+	trace, err := tencentSSLRequest(ctx, account, "DescribeCertificate", map[string]any{"CertificateId": certificateID}, &out)
+	if err != nil {
 		return nil, err
 	}
-	if err := tencentResponseErr(out.Response.Error); err != nil {
+	if err := tencentResponseErr(out.Response.Error, trace); err != nil {
 		return nil, err
 	}
 	return &tencentDetail{
@@ -575,13 +623,13 @@ func tencentDescribeCertificate(ctx context.Context, account model.SSLAccount, c
 	}, nil
 }
 
-func tencentSSLRequest(ctx context.Context, account model.SSLAccount, action string, payload any, out any) error {
+func tencentSSLRequest(ctx context.Context, account model.SSLAccount, action string, payload any, out any) (*tencentRequestTrace, error) {
 	if strings.TrimSpace(account.AccessKey) == "" || strings.TrimSpace(account.SecretKey) == "" {
-		return fmt.Errorf("请先填写腾讯云SecretId和SecretKey")
+		return nil, fmt.Errorf("请先填写腾讯云SecretId和SecretKey")
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	timestamp := time.Now().Unix()
 	date := time.Unix(timestamp, 0).UTC().Format("2006-01-02")
@@ -596,10 +644,15 @@ func tencentSSLRequest(ctx context.Context, account model.SSLAccount, action str
 	secretSigning := hmacSHA256(secretService, "tc3_request")
 	signature := hex.EncodeToString(hmacSHA256(secretSigning, stringToSign))
 	authorization := fmt.Sprintf("TC3-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s", account.AccessKey, credentialScope, signedHeaders, signature)
+	trace := &tencentRequestTrace{
+		RequestURL:    "https://" + tencentSSLHost,
+		RequestMethod: http.MethodPost,
+		RequestBody:   string(raw),
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+tencentSSLHost, bytes.NewReader(raw))
 	if err != nil {
-		return err
+		return trace, withTencentTrace(err, trace)
 	}
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -607,27 +660,55 @@ func tencentSSLRequest(ctx context.Context, account model.SSLAccount, action str
 	req.Header.Set("X-TC-Action", action)
 	req.Header.Set("X-TC-Timestamp", strconv.FormatInt(timestamp, 10))
 	req.Header.Set("X-TC-Version", tencentSSLVersion)
+	trace.RequestHeaders = mustJSON(map[string]string{
+		"Authorization":  maskTencentAuthorization(authorization),
+		"Content-Type":   "application/json; charset=utf-8",
+		"Host":           tencentSSLHost,
+		"X-TC-Action":    action,
+		"X-TC-Timestamp": strconv.FormatInt(timestamp, 10),
+		"X-TC-Version":   tencentSSLVersion,
+	})
 
 	resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
 	if err != nil {
-		return err
+		return trace, withTencentTrace(err, trace)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
+	trace.ResponseBody = string(body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("腾讯云SSL请求失败，HTTP状态码：%d，响应：%s", resp.StatusCode, string(body))
+		return trace, withTencentTrace(fmt.Errorf("腾讯云SSL请求失败，HTTP状态码：%d，响应：%s", resp.StatusCode, string(body)), trace)
 	}
 	if err := json.Unmarshal(body, out); err != nil {
-		return fmt.Errorf("解析腾讯云SSL响应失败：%w", err)
+		return trace, withTencentTrace(fmt.Errorf("解析腾讯云SSL响应失败：%w", err), trace)
 	}
-	return nil
+	return trace, nil
 }
 
-func tencentResponseErr(err *tencentError) error {
+func tencentResponseErr(err *tencentError, trace *tencentRequestTrace) error {
 	if err == nil || err.Code == "" {
 		return nil
 	}
-	return fmt.Errorf("%s：%s", err.Code, err.Message)
+	return withTencentTrace(fmt.Errorf("%s：%s", err.Code, err.Message), trace)
+}
+
+func mustJSON(value any) string {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
+
+func maskTencentAuthorization(value string) string {
+	if value == "" {
+		return ""
+	}
+	parts := strings.Split(value, "Signature=")
+	if len(parts) != 2 {
+		return "TC3-HMAC-SHA256 ***"
+	}
+	return parts[0] + "Signature=***"
 }
 
 func pickTencentAuthRecord(detail *tencentDVAuthDetail) (string, string) {

@@ -1,6 +1,7 @@
-import { BellOutlined, FieldTimeOutlined, LoginOutlined, SafetyCertificateOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { BellOutlined, EyeOutlined, FieldTimeOutlined, LoginOutlined, SafetyCertificateOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { ProTable } from '@ant-design/pro-components';
-import { Empty, Space, Tabs, Tag } from 'antd';
+import { Descriptions, Drawer, Empty, Space, Tabs, Tag, Typography } from 'antd';
+import { useMemo, useState } from 'react';
 import { listResource } from '../services/api';
 
 const statusMap = {
@@ -18,6 +19,22 @@ const certificateActionMap = {
 function statusRender(_, row) {
   const item = statusMap[row.status] || { color: 'default', text: row.status || '-' };
   return <Tag color={item.color}>{item.text}</Tag>;
+}
+
+function ActionTag({ icon, color = 'blue', children, onClick }) {
+  return (
+    <Tag className="qdl-action-tag" color={color} icon={icon} onClick={onClick}>
+      {children}
+    </Tag>
+  );
+}
+
+function TextBlock({ value }) {
+  return (
+    <Typography.Paragraph copyable={!!value} className="qdl-log-detail-text">
+      {value || '-'}
+    </Typography.Paragraph>
+  );
 }
 
 function LogTable({ resource, columns }) {
@@ -58,16 +75,6 @@ const operationColumns = [
   { title: '时间', dataIndex: 'createdAt', valueType: 'dateTime', width: 180 },
 ];
 
-const certificateColumns = [
-  { title: '证书域名', dataIndex: 'commonName', width: 220 },
-  { title: '动作', dataIndex: 'action', width: 100, render: (_, row) => certificateActionMap[row.action] || row.action || '-' },
-  { title: '服务商', dataIndex: 'provider', width: 140 },
-  { title: '腾讯云证书ID', dataIndex: 'providerCertificateId', width: 180, render: (_, row) => row.providerCertificateId || '-' },
-  { title: '状态', dataIndex: 'status', width: 100, render: statusRender },
-  { title: '说明', dataIndex: 'message', ellipsis: true },
-  { title: '时间', dataIndex: 'createdAt', valueType: 'dateTime', width: 180 },
-];
-
 function PendingPanel() {
   return (
     <div className="qdl-log-empty">
@@ -86,6 +93,29 @@ function TabLabel({ icon, children }) {
 }
 
 export function LogPage() {
+  const [certificateDetail, setCertificateDetail] = useState(null);
+
+  const certificateColumns = useMemo(() => [
+    { title: '证书域名', dataIndex: 'commonName', width: 220 },
+    { title: '动作', dataIndex: 'action', width: 100, render: (_, row) => certificateActionMap[row.action] || row.action || '-' },
+    { title: '服务商', dataIndex: 'provider', width: 140 },
+    { title: '腾讯云证书ID', dataIndex: 'providerCertificateId', width: 180, render: (_, row) => row.providerCertificateId || '-' },
+    { title: '状态', dataIndex: 'status', width: 100, render: statusRender },
+    { title: '说明', dataIndex: 'message', ellipsis: true },
+    { title: '时间', dataIndex: 'createdAt', valueType: 'dateTime', width: 180 },
+    {
+      title: '操作',
+      valueType: 'option',
+      fixed: 'right',
+      width: 90,
+      render: (_, row) => (
+        <ActionTag icon={<EyeOutlined />} color="default" onClick={() => setCertificateDetail(row)}>
+          详情
+        </ActionTag>
+      ),
+    },
+  ], []);
+
   return (
     <div className="qdl-log-page">
       <Tabs
@@ -118,6 +148,24 @@ export function LogPage() {
           },
         ]}
       />
+      <Drawer
+        title="证书日志详情"
+        open={!!certificateDetail}
+        width={760}
+        onClose={() => setCertificateDetail(null)}
+      >
+        <Descriptions column={1} bordered size="small">
+          <Descriptions.Item label="证书域名">{certificateDetail?.commonName || '-'}</Descriptions.Item>
+          <Descriptions.Item label="动作">{certificateActionMap[certificateDetail?.action] || certificateDetail?.action || '-'}</Descriptions.Item>
+          <Descriptions.Item label="状态">{certificateDetail ? statusRender(null, certificateDetail) : '-'}</Descriptions.Item>
+          <Descriptions.Item label="说明">{certificateDetail?.message || '-'}</Descriptions.Item>
+          <Descriptions.Item label="请求URL"><TextBlock value={certificateDetail?.requestUrl} /></Descriptions.Item>
+          <Descriptions.Item label="请求方法">{certificateDetail?.requestMethod || '-'}</Descriptions.Item>
+          <Descriptions.Item label="请求头"><TextBlock value={certificateDetail?.requestHeaders} /></Descriptions.Item>
+          <Descriptions.Item label="请求体"><TextBlock value={certificateDetail?.requestBody} /></Descriptions.Item>
+          <Descriptions.Item label="响应体"><TextBlock value={certificateDetail?.responseBody} /></Descriptions.Item>
+        </Descriptions>
+      </Drawer>
     </div>
   );
 }

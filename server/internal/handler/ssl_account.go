@@ -154,10 +154,11 @@ func tencentListCertificates(ctx context.Context, account model.SSLAccount, offs
 	if strings.TrimSpace(searchKey) != "" {
 		payload["SearchKey"] = strings.TrimSpace(searchKey)
 	}
-	if err := tencentSSLRequest(ctx, account, "DescribeCertificates", payload, &out); err != nil {
+	trace, err := tencentSSLRequest(ctx, account, "DescribeCertificates", payload, &out)
+	if err != nil {
 		return nil, 0, err
 	}
-	if err := tencentResponseErr(out.Response.Error); err != nil {
+	if err := tencentResponseErr(out.Response.Error, trace); err != nil {
 		return nil, 0, err
 	}
 	items := make([]tencentCertificateItem, 0, len(out.Response.Certificates))
