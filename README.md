@@ -5,7 +5,7 @@
 
 ![DaSSLm Preview](https://assets.oss.qialas.com/images/udd1f25b948024046/460ec753bcd340eda675ee81accd4b0d.png)
 
-DaSSLm 面向需要统一管理域名解析、SSL 证书申请、证书资产和自动化部署的个人开发者与小团队。项目采用 Go + MySQL + React 技术栈，管理后台可被嵌入 Go 服务端，生产环境只需要运行一个 `qdl-server` 程序即可同时提供后台页面和 API 服务。
+DaSSLm 面向需要统一管理域名解析、SSL 证书申请、证书资产和自动化部署的个人开发者与小团队。项目采用 Go + MySQL + React 技术栈，管理后台可被嵌入 Go 服务端。
 
 ## 功能特性
 
