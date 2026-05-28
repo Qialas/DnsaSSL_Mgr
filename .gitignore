@@ -1,0 +1,22 @@
+.DS_Store
+
+# Local config
+server/config/config.yaml
+server/config/install.lock
+
+# Node dependencies
+admin-web/node_modules/
+
+# Frontend build output
+admin-web/dist/
+
+# Server release output
+server/dist/
+
+# Logs and runtime files
+*.log
+*.pid
+
+# Editor and OS files
+.idea/
+.vscode/
