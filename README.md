@@ -1,22 +1,21 @@
 # DaSSLm
 
-> 开源的一站式 DNS 与 SSL 证书管理系统。  
+> 开源的一站式 DNS 与 SSL 证书管理系统。
 > Dns and SSL Manager.
 
 ![DaSSLm Preview](https://assets.oss.qialas.com/images/udd1f25b948024046/460ec753bcd340eda675ee81accd4b0d.png)
 
-DaSSLm 面向需要统一管理域名解析、SSL 证书申请、证书资产和自动化部署的个人开发者与小团队。项目采用 Go + MySQL + React 技术栈，管理后台可被嵌入 Go 服务端。
+DaSSLm 面向需要统一管理域名解析、SSL 证书申请、证书资产和自动化部署的个人开发者与小团队。项目采用 Go + MySQL + React 技术栈。
 
 ## 功能特性
 
 - 多厂商 DNS 账号管理：支持阿里云 DNS、DNSPod / 腾讯云 DNS、Cloudflare 等服务接入。
-- 域名资产同步：从 DNS 服务商拉取域名，保存解析商、解析记录数、域名到期时间等信息。
+- 域名资产同步：将多个服务商接入的域名统一编辑/管理解析记录。
 - DNS 解析记录管理：支持解析记录列表、线路查询、新增、编辑、删除与同步。
 - SSL 账号管理：支持 Let's Encrypt、ZeroSSL、自定义 ACME、腾讯云免费证书、阿里云免费证书等账号类型配置。
 - 证书资产管理：独立证书页面，支持证书申请记录、证书状态、到期时间、续签提前天数等管理。
 - 腾讯云 SSL 对接：支持腾讯云免费证书申请、DNS 验证记录补全、证书资源拉取与本地保存。
-- 自动化与日志：预留自动任务管理，记录登录、DNS、证书等关键操作日志。
-- 单程序部署：前端构建产物可嵌入 Go 二进制，部署时无需单独维护前端运行时。
+- 自动任务：自动续签证书、自动部署、自动添加对应DNS解析、等。
 
 ## 技术栈
 
@@ -24,9 +23,9 @@ DaSSLm 面向需要统一管理域名解析、SSL 证书申请、证书资产和
 | --- | --- |
 | 服务端 | Go、Gin、GORM、MySQL、JWT |
 | 管理端 | React、Vite、Ant Design、Ant Design Pro Components |
-| DNS 接入 | Alibaba Cloud DNS、Tencent Cloud DNSPod、Cloudflare API |
-| SSL 接入 | ACME 账号模型、Tencent Cloud SSL |
-| 部署 | Linux amd64 打包、静态资源嵌入、单二进制运行 |
+| DNS 接入 | 阿里云DNS、腾讯云DNS、DNSPod、Cloudflare|
+| SSL 接入 | Let's Encrypt、ZeroSSL、LiteSSL、腾讯云免费证书、阿里云免费证书 |
+| 自动部署| 宝塔面板、腾讯云内容网络分发、腾讯云COS|
 
 ## 项目结构
 
@@ -36,7 +35,30 @@ DaSSLm 面向需要统一管理域名解析、SSL 证书申请、证书资产和
 └── server/             # Go 服务端、API、数据库模型与打包脚本
 ```
 
+## 部署使用
+
+### 宝塔面板
+
+#### 1.创建数据库
+
+安装好基础环境后创建MySQL数据库，并创建一个程序目录，例如`/www/wwwroot/DaSSLm`。
+
+#### 2.下载release包
+
+Linux服务器可以直接在 [release](https://github.com/Qialas/DnsaSSL_Mgr/releases) 中下载打包好的qdl-server-linux-amd64_x.x.x.zip，上传到对应目录中并解压
+
+#### 3.创建Go项目
+
+| 配置项 | 配置说明 |
+| --- | --- |
+| 项目执行文件 | /解压目录/qdl-server |
+| 项目名称 | 默认即可（可自定义） |
+| 项目端口| 8080（默认，可在config/config.yaml中修改）|
+
+启动用户选择www，其他配置项非必须，启动后程序会自动安装，默认用户名admin 密码123456
+
 ## 快速开始
+
 
 ### 1. 准备数据库
 
@@ -156,4 +178,5 @@ jwt:
   secret: "please-change-this-secret"
   expireHours: 24
 ```
+
 
