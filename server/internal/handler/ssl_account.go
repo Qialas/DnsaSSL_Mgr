@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"qdl/server/internal/model"
 
@@ -56,7 +57,13 @@ func (h *SSLAccountHandler) Certificates(c *gin.Context) {
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	items, total, err := tencentListCertificates(c.Request.Context(), account, uint64((page-1)*pageSize), uint64(pageSize), c.Query("keyword"))
+	client, err := sslHTTPClient(h.db, account, 30*time.Second)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), sslHTTPClientContextKey{}, client)
+	items, total, err := tencentListCertificates(ctx, account, uint64((page-1)*pageSize), uint64(pageSize), c.Query("keyword"))
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
@@ -73,36 +80,100 @@ func (h *SSLAccountHandler) ImportCertificates(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "当前只支持腾讯云免费证书保存到本地")
 		return
 	}
-	items, _, err := tencentListCertificates(c.Request.Context(), account, 0, 100, "")
+	client, err := sslHTTPClient(h.db, account, 30*time.Second)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), sslHTTPClientContextKey{}, client)
+	items, _, err := tencentListCertificates(ctx, account, 0, 100, "")
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
 	saved := 0
 	for _, item := range items {
-		if strings.TrimSpace(item.CertificateID) == "" || strings.TrimSpace(item.Domain) == "" {
-			continue
-		}
-		row := certificateFromTencentItem(account.ID, item)
-		if domainID := h.findDomainID(item.Domain); domainID > 0 {
-			row.DomainID = domainID
-		}
-		if err := h.db.Where("provider_certificate_id = ?", item.CertificateID).Assign(row).FirstOrCreate(&row).Error; err != nil {
+		row, ok, err := h.saveTencentCertificate(account, item)
+		if err != nil {
 			fail(c, http.StatusInternalServerError, "保存证书资源失败")
 			return
 		}
+		if !ok {
+			continue
+		}
 		saved++
-		_ = h.db.Create(&model.CertificateLog{
-			CertificateID:         row.ID,
-			ProviderCertificateID: row.ProviderCertificateID,
-			CommonName:            row.CommonName,
-			Action:                "import",
-			Provider:              account.Provider,
-			Status:                "success",
-			Message:               "腾讯云证书资源已保存到本地",
-		}).Error
+		h.logTencentCertificateImport(row, account)
 	}
 	ok(c, gin.H{"saved": saved})
+}
+
+func (h *SSLAccountHandler) ImportCertificate(c *gin.Context) {
+	account, found := h.sslAccount(c)
+	if !found {
+		return
+	}
+	if !strings.EqualFold(account.Provider, "tencent_free") {
+		fail(c, http.StatusBadRequest, "当前只支持腾讯云免费证书保存到本地")
+		return
+	}
+	certificateID := strings.TrimSpace(c.Param("certificateId"))
+	if certificateID == "" {
+		fail(c, http.StatusBadRequest, "证书ID不能为空")
+		return
+	}
+	client, err := sslHTTPClient(h.db, account, 30*time.Second)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx := context.WithValue(c.Request.Context(), sslHTTPClientContextKey{}, client)
+	items, _, err := tencentListCertificates(ctx, account, 0, 100, certificateID)
+	if err != nil {
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	for _, item := range items {
+		if item.CertificateID != certificateID {
+			continue
+		}
+		row, saved, err := h.saveTencentCertificate(account, item)
+		if err != nil {
+			fail(c, http.StatusInternalServerError, "保存证书资源失败")
+			return
+		}
+		if !saved {
+			fail(c, http.StatusBadRequest, "证书资源信息不完整，无法导入")
+			return
+		}
+		h.logTencentCertificateImport(row, account)
+		ok(c, gin.H{"item": row})
+		return
+	}
+	fail(c, http.StatusNotFound, "腾讯云证书资源不存在")
+}
+
+func (h *SSLAccountHandler) saveTencentCertificate(account model.SSLAccount, item tencentCertificateItem) (model.Certificate, bool, error) {
+	if strings.TrimSpace(item.CertificateID) == "" || strings.TrimSpace(item.Domain) == "" {
+		return model.Certificate{}, false, nil
+	}
+	row := certificateFromTencentItem(account.ID, item)
+	if domainID := h.findDomainID(item.Domain); domainID > 0 {
+		row.DomainID = domainID
+	}
+	err := h.db.Where("provider_certificate_id = ?", item.CertificateID).Assign(row).FirstOrCreate(&row).Error
+	return row, true, err
+}
+
+func (h *SSLAccountHandler) logTencentCertificateImport(row model.Certificate, account model.SSLAccount) {
+	_ = h.db.Create(&model.CertificateLog{
+		CertificateID:         row.ID,
+		ProviderCertificateID: row.ProviderCertificateID,
+		CommonName:            row.CommonName,
+		Action:                "import",
+		Provider:              account.Provider,
+		Status:                "success",
+		Message:               "腾讯云证书资源已保存到本地",
+	}).Error
 }
 
 func (h *SSLAccountHandler) sslAccount(c *gin.Context) (model.SSLAccount, bool) {

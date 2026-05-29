@@ -19,9 +19,11 @@ import {
 import { Button, Card, Col, Drawer, Popconfirm, Row, Space, Tag, message } from 'antd';
 import { useMemo, useRef, useState } from 'react';
 import { CloudProviderIcon } from '../components/CloudProviderIcon';
+import { ProxyConfigFields } from '../components/ProxyConfigFields';
 import {
   createResource,
   deleteResource,
+  importSSLAccountCertificate,
   importSSLAccountCertificates,
   listResource,
   listSSLAccountCertificates,
@@ -102,6 +104,11 @@ function ActionTag({ icon, color = 'blue', children, onClick }) {
 function statusRender(_, row) {
   const item = statusMap[row.status] || { color: 'default', text: row.status || '-' };
   return <Tag color={item.color}>{item.text}</Tag>;
+}
+
+function proxyRender(_, row) {
+  if (!row.useProxy) return <Tag>直连</Tag>;
+  return <Tag color="processing">{row.proxyMode === 'auto' ? '自动轮询' : '指定代理'}</Tag>;
 }
 
 function certificateStatusRender(_, row) {
@@ -224,6 +231,7 @@ function SSLAccountFormFields() {
           />
         </Col>
       </Row>
+      <ProxyConfigFields />
       <ProFormTextArea name="remark" label="备注" />
     </>
   );
@@ -269,6 +277,7 @@ export function SSLAccountPage() {
     { title: '证书服务', dataIndex: 'provider', width: 180, render: providerRender },
     { title: '邮箱', dataIndex: 'email', width: 200, render: (_, row) => row.email || '-' },
     { title: 'ACME目录', dataIndex: 'directoryUrl', ellipsis: true, render: (_, row) => row.directoryUrl || '-' },
+    { title: '代理', dataIndex: 'useProxy', width: 100, render: proxyRender },
     { title: '状态', dataIndex: 'status', width: 90, render: statusRender },
     { title: '备注', dataIndex: 'remark', ellipsis: true },
     {
@@ -304,7 +313,26 @@ export function SSLAccountPage() {
     { title: '验证方式', dataIndex: 'verifyType', width: 100, render: (_, row) => row.verifyType || '-' },
     { title: '过期时间', dataIndex: 'certEndTime', width: 170, render: (_, row) => row.certEndTime || '-' },
     { title: '备注', dataIndex: 'alias', ellipsis: true, render: (_, row) => row.alias || '-' },
-  ], []);
+    {
+      title: '操作',
+      valueType: 'option',
+      width: 90,
+      fixed: 'right',
+      render: (_, row) => (
+        <ActionTag
+          icon={<SaveOutlined />}
+          color="processing"
+          onClick={async () => {
+            await importSSLAccountCertificate(certificateAccount.id, row.certificateId);
+            message.success('已导入到本地');
+            certificateActionRef.current?.reload();
+          }}
+        >
+          导入
+        </ActionTag>
+      ),
+    },
+  ], [certificateAccount?.id]);
 
   return (
     <>
@@ -329,7 +357,7 @@ export function SSLAccountPage() {
         title={`${current ? '编辑' : '新建'}SSL账号`}
         open={open}
         drawerProps={{ destroyOnClose: true, onClose: () => setOpen(false), width: 620 }}
-        initialValues={current || { status: 'enabled', provider: 'letsencrypt' }}
+        initialValues={current || { status: 'enabled', provider: 'letsencrypt', useProxy: false, proxyMode: 'manual' }}
         onFinish={async (values) => {
           const payload = normalizeSSLAccountPayload(values);
           if (current?.id) await updateResource('ssl-accounts', current.id, { ...current, ...payload });

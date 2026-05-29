@@ -15,6 +15,4 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "${PACKAGE_DIR}/qdl-server" ./
 cp "${ROOT_DIR}/config/config.example.yaml" "${PACKAGE_DIR}/config/config.yaml"
 cp "${ROOT_DIR}/README.md" "${PACKAGE_DIR}/README.md"
 
-cd "${DIST_DIR}"
-tar -czf qdl-server-linux-amd64.tar.gz qdl-server-linux-amd64
-echo "${DIST_DIR}/qdl-server-linux-amd64.tar.gz"
+echo "${PACKAGE_DIR}"

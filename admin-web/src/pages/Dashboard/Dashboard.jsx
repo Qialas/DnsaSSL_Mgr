@@ -1,10 +1,13 @@
 import {
   ApiOutlined,
+  BugOutlined,
   DashboardOutlined,
   FieldTimeOutlined,
+  GithubOutlined,
   GlobalOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
+  TagsOutlined,
 } from '@ant-design/icons';
 import { PageLoading } from '@ant-design/pro-components';
 import { Button, Card, Col, Progress, Row, Space, Typography } from 'antd';
@@ -12,6 +15,30 @@ import { useEffect, useState } from 'react';
 import { api } from '../../services/api';
 
 const { Text } = Typography;
+
+const projectLinks = [
+  {
+    title: '开源地址',
+    detail: 'GitHub Repository',
+    url: 'https://github.com/Qialas/DnsaSSL_Mgr',
+    icon: <GithubOutlined />,
+    accent: '#111827',
+  },
+  {
+    title: 'Issues 提交',
+    detail: 'Bug / Feature Request',
+    url: 'https://github.com/Qialas/DnsaSSL_Mgr/issues',
+    icon: <BugOutlined />,
+    accent: '#dc2626',
+  },
+  {
+    title: 'Release 地址',
+    detail: '版本发布与下载',
+    url: 'https://github.com/Qialas/DnsaSSL_Mgr/releases',
+    icon: <TagsOutlined />,
+    accent: '#2563eb',
+  },
+];
 
 function clampPercent(value) {
   return Math.min(Math.max(Number(value || 0), 0), 100);
@@ -104,6 +131,47 @@ function AssetCard({ icon, title, value, detail, accent }) {
   );
 }
 
+function ProjectLinkItem({ icon, title, detail, url, accent }) {
+  return (
+    <div
+      className="qdl-dashboard-link-item"
+      style={{ '--accent': accent }}
+      onClick={() => window.open(url, '_blank', 'noopener,noreferrer')}
+    >
+      <div className="qdl-dashboard-link-main">
+        <span className="qdl-dashboard-asset-icon">{icon}</span>
+        <div>
+          <div className="qdl-dashboard-link-title">{title}</div>
+          <Text type="secondary">{detail}</Text>
+        </div>
+      </div>
+      <Typography.Text copyable={{ text: url }} className="qdl-dashboard-link-url">
+        {url}
+      </Typography.Text>
+    </div>
+  );
+}
+
+function ProjectLinksPanel() {
+  return (
+    <Card className="qdl-dashboard-panel qdl-dashboard-links" bordered={false}>
+      <div className="qdl-dashboard-panel-head">
+        <div>
+          <div className="qdl-dashboard-panel-title">项目地址</div>
+          <Text type="secondary">开源仓库、问题反馈与版本发布</Text>
+        </div>
+      </div>
+      <Row gutter={[14, 14]}>
+        {projectLinks.map((item) => (
+          <Col key={item.title} xs={24} md={8}>
+            <ProjectLinkItem {...item} />
+          </Col>
+        ))}
+      </Row>
+    </Card>
+  );
+}
+
 export function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -156,6 +224,8 @@ export function Dashboard() {
           <AssetCard icon={<ApiOutlined />} title="7天内到期证书" value={data.expiringCerts7d || 0} detail="建议优先检查续签" accent="#f59e0b" />
         </Col>
       </Row>
+
+      <ProjectLinksPanel />
     </Space>
   );
 }

@@ -11,6 +11,9 @@ type DomainAccount struct {
 	Remark     string  `gorm:"size:255;comment:备注信息" json:"remark"`
 	Status     string  `gorm:"size:32;not null;default:enabled;comment:账号状态：enabled启用 disabled禁用" json:"status"`
 	LastTestAt *string `gorm:"size:32;comment:最近连通性检测时间" json:"lastTestAt"`
+	UseProxy   bool    `gorm:"not null;default:false;comment:是否通过代理池请求服务商" json:"useProxy"`
+	ProxyMode  string  `gorm:"size:32;not null;default:manual;comment:代理模式：manual指定 auto自动轮询" json:"proxyMode"`
+	ProxyID    uint    `gorm:"comment:指定代理池节点ID" json:"proxyId"`
 }
 
 func (DomainAccount) TableName() string {

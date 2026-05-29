@@ -87,8 +87,22 @@ export function revokeCertificate(id) {
   return api(`/certificates/${id}/revoke`, { method: 'POST' });
 }
 
-export function getCertificateDetail(id) {
-  return api(`/certificates/${id}/detail`);
+export function deployCertificate(id, data) {
+  return api(`/certificates/${id}/deploy`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function listDeployAccountSites(id, params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return api(`/deploy-accounts/${id}/sites${query ? `?${query}` : ''}`);
+}
+
+export function testDeployAccount(id) {
+  return api(`/deploy-accounts/${id}/test`, { method: 'POST' });
+}
+
+export function getCertificateDetail(id, params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return api(`/certificates/${id}/detail${query ? `?${query}` : ''}`);
 }
 
 export function listSSLAccountCertificates(id, params = {}) {
@@ -98,4 +112,12 @@ export function listSSLAccountCertificates(id, params = {}) {
 
 export function importSSLAccountCertificates(id) {
   return api(`/ssl-accounts/${id}/certificates/import`, { method: 'POST' });
+}
+
+export function importSSLAccountCertificate(id, certificateId) {
+  return api(`/ssl-accounts/${id}/certificates/${encodeURIComponent(certificateId)}/import`, { method: 'POST' });
+}
+
+export function testProxySetting(id) {
+  return api(`/proxy-settings/${id}/test`, { method: 'POST' });
 }

@@ -3,6 +3,7 @@ import { DrawerForm, ModalForm, ProFormDependency, ProFormRadio, ProFormSelect, 
 import { Button, Card, Col, Popconfirm, Row, Space, Tag, message } from 'antd';
 import { useMemo, useRef, useState } from 'react';
 import { CloudProviderIcon, cloudProviders, providerNames } from '../components/CloudProviderIcon';
+import { ProxyConfigFields } from '../components/ProxyConfigFields';
 import { createResource, deleteResource, listResource, testDomainAccount, updateResource } from '../services/api';
 
 const statusMap = {
@@ -17,6 +18,11 @@ const statusMap = {
 function statusRender(_, row) {
   const item = statusMap[row.status] || { color: 'default', text: row.status || '-' };
   return <Tag color={item.color}>{item.text}</Tag>;
+}
+
+function proxyRender(_, row) {
+  if (!row.useProxy) return <Tag>直连</Tag>;
+  return <Tag color="processing">{row.proxyMode === 'auto' ? '自动轮询' : '指定代理'}</Tag>;
 }
 
 const presets = {
@@ -60,6 +66,7 @@ const presets = {
     },
     { title: 'AccessKey', dataIndex: 'accessKey', ellipsis: true },
     { title: '最近检测', dataIndex: 'lastTestAt', valueType: 'dateTime' },
+    { title: '代理', dataIndex: 'useProxy', width: 100, render: proxyRender },
     { title: '状态', dataIndex: 'status', valueType: 'select', valueEnum: { enabled: '启用', disabled: '停用' }, render: statusRender },
     { title: '备注', dataIndex: 'remark', ellipsis: true },
   ],
@@ -183,6 +190,7 @@ function DomainAccountFormFields() {
           />
         </Col>
       </Row>
+      <ProxyConfigFields />
       <ProFormTextArea name="remark" label="备注" />
     </>
   );
@@ -257,7 +265,7 @@ export function ResourcePage({ title, resource, columnsPreset, readOnly = false 
           title={`${current ? '编辑' : '新建'}${title}`}
           open={open}
           drawerProps={{ destroyOnClose: true, onClose: () => setOpen(false), width: 560 }}
-          initialValues={current || { status: 'enabled', provider: 'aliyun' }}
+          initialValues={current || { status: 'enabled', provider: 'aliyun', useProxy: false, proxyMode: 'manual' }}
           onFinish={async (values) => {
             if (current?.id) await updateResource(resource, current.id, { ...current, ...values });
             else await createResource(resource, values);

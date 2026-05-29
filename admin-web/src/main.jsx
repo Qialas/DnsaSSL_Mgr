@@ -22,9 +22,12 @@ import { DomainPage, DomainRecordsPage } from './pages/DomainPage';
 import { CertificatePage } from './pages/CertificatePage';
 import { ResourcePage } from './pages/ResourcePage';
 import { SSLAccountPage } from './pages/SSLAccountPage';
+import { DeployAccountPage } from './pages/DeployAccountPage';
 import { SettingsBase } from './pages/SettingsBase';
 import { LogPage } from './pages/LogPage';
 import './styles.css';
+
+const APP_TITLE = 'DaSSLm 管理后台';
 
 const routes = [
   { path: '/dashboard', name: '仪表盘', icon: <DashboardOutlined /> },
@@ -66,7 +69,7 @@ const pageMap = {
   '/tasks': <ResourcePage title="自动任务" resource="tasks" columnsPreset="tasks" />,
   '/accounts/domain': <ResourcePage title="域名账号" resource="domain-accounts" columnsPreset="domainAccounts" />,
   '/accounts/ssl': <SSLAccountPage />,
-  '/accounts/deploy': <div className="qdl-placeholder-page" />,
+  '/accounts/deploy': <DeployAccountPage />,
   '/logs': <LogPage />,
   '/settings/base': <SettingsBase />,
   '/settings/profile': <ResourcePage title="个人设置" resource="users" columnsPreset="users" />,
@@ -147,6 +150,11 @@ function App() {
 
   const resolved = resolveRoute(pathname);
   const current = resolved.current;
+
+  useEffect(() => {
+    document.title = `${user ? current.name : '登录'} | ${APP_TITLE}`;
+  }, [current.name, user]);
+
   const navigate = (path) => {
     setPathname(path);
     window.history.pushState(null, '', path);
@@ -209,7 +217,7 @@ function App() {
           colorTextMenuItemHover: '#111111',
         },
         pageContainer: {
-          paddingInlinePageContainerContent: 30,
+          paddingInlinePageContainerContent: 100,
           paddingBlockPageContainerContent: 24,
         },
       }}

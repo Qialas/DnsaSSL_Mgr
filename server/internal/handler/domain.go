@@ -9,6 +9,7 @@ import (
 
 	"qdl/server/internal/model"
 	dnsservice "qdl/server/internal/service/dns"
+	proxyservice "qdl/server/internal/service/proxypool"
 	whoisservice "qdl/server/internal/service/whois"
 
 	"github.com/gin-gonic/gin"
@@ -57,11 +58,19 @@ func (h *DomainHandler) Create(c *gin.Context) {
 
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	providerDomains, err := dnsservice.ListDomains(ctx, dnsAccount(account))
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	providerDomains, err := dnsservice.ListDomains(ctx, dnsAccount)
+	trace := dnsTrace(account, "ListDomains", gin.H{"accountId": account.ID}, providerDomains, err)
+	if err != nil {
+		logDomainAccount(h.db, account, 0, account.Name, "domains", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, 0, account.Name, "domains", "success", "已获取账号域名列表", trace)
 	providerMap := make(map[string]dnsservice.DomainItem, len(providerDomains))
 	for _, item := range providerDomains {
 		providerMap[item.Name] = item
@@ -102,11 +111,19 @@ func (h *DomainHandler) ProviderDomains(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	items, err := dnsservice.ListDomains(ctx, dnsAccount(account))
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	items, err := dnsservice.ListDomains(ctx, dnsAccount)
+	trace := dnsTrace(account, "ListDomains", gin.H{"accountId": account.ID}, items, err)
+	if err != nil {
+		logDomainAccount(h.db, account, 0, account.Name, "domains", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, 0, account.Name, "domains", "success", "已获取账号域名列表", trace)
 	var saved []model.Domain
 	h.db.Where("domain_account_id = ?", account.ID).Find(&saved)
 	savedMap := make(map[string]bool, len(saved))
@@ -151,11 +168,19 @@ func (h *DomainHandler) Records(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	items, err := dnsservice.ListRecords(ctx, dnsAccount(account), domain.Name)
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	items, err := dnsservice.ListRecords(ctx, dnsAccount, domain.Name)
+	trace := dnsTrace(account, "ListRecords", gin.H{"domainName": domain.Name}, items, err)
+	if err != nil {
+		logDomainAccount(h.db, account, domain.ID, domain.Name, "records", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, domain.ID, domain.Name, "records", "success", "已获取解析记录列表", trace)
 	rows := make([]model.DomainRecord, 0, len(items))
 	for _, item := range items {
 		row := recordModel(domain.ID, item)
@@ -176,11 +201,19 @@ func (h *DomainHandler) RecordLines(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
-	items, err := dnsservice.ListRecordLines(ctx, dnsAccount(account), domain.Name, domain.ProviderGrade)
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	items, err := dnsservice.ListRecordLines(ctx, dnsAccount, domain.Name, domain.ProviderGrade)
+	trace := dnsTrace(account, "ListRecordLines", gin.H{"domainName": domain.Name, "domainGrade": domain.ProviderGrade}, items, err)
+	if err != nil {
+		logDomainAccount(h.db, account, domain.ID, domain.Name, "record_lines", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, domain.ID, domain.Name, "record_lines", "success", "已获取解析线路列表", trace)
 	ok(c, gin.H{"items": items, "total": len(items)})
 }
 
@@ -201,11 +234,19 @@ func (h *DomainHandler) CreateRecord(c *gin.Context) {
 	req.DomainName = domain.Name
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	item, err := dnsservice.CreateRecord(ctx, dnsAccount(account), req)
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	item, err := dnsservice.CreateRecord(ctx, dnsAccount, req)
+	trace := dnsTrace(account, "CreateRecord", req, item, err)
+	if err != nil {
+		logDomainAccount(h.db, account, domain.ID, domain.Name, "create_record", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, domain.ID, domain.Name, "create_record", "success", "已新增解析记录", trace)
 	row := recordModel(domain.ID, *item)
 	if err := h.db.Create(&row).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "保存解析记录失败")
@@ -241,11 +282,19 @@ func (h *DomainHandler) UpdateRecord(c *gin.Context) {
 	req.RecordID = row.ProviderRecordID
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	item, err := dnsservice.UpdateRecord(ctx, dnsAccount(account), req)
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	item, err := dnsservice.UpdateRecord(ctx, dnsAccount, req)
+	trace := dnsTrace(account, "UpdateRecord", req, item, err)
+	if err != nil {
+		logDomainAccount(h.db, account, domain.ID, domain.Name, "update_record", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, domain.ID, domain.Name, "update_record", "success", "已更新解析记录", trace)
 	updated := recordModel(domain.ID, *item)
 	if err := h.db.Model(&row).Updates(updated).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "保存解析记录失败")
@@ -271,10 +320,19 @@ func (h *DomainHandler) DeleteRecord(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 	defer cancel()
-	if err := dnsservice.DeleteRecord(ctx, dnsAccount(account), domain.Name, row.ProviderRecordID); err != nil {
+	dnsAccount, proxyErr := dnsAccountWithProxy(h.db, account)
+	if proxyErr != nil {
+		fail(c, http.StatusBadRequest, proxyErr.Error())
+		return
+	}
+	err := dnsservice.DeleteRecord(ctx, dnsAccount, domain.Name, row.ProviderRecordID)
+	trace := dnsTrace(account, "DeleteRecord", gin.H{"domainName": domain.Name, "recordId": row.ProviderRecordID}, gin.H{"deleted": err == nil}, err)
+	if err != nil {
+		logDomainAccount(h.db, account, domain.ID, domain.Name, "delete_record", "failed", err.Error(), trace)
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	logDomainAccount(h.db, account, domain.ID, domain.Name, "delete_record", "success", "已删除解析记录", trace)
 	if err := h.db.Delete(&row).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "删除解析记录失败")
 		return
@@ -297,8 +355,22 @@ func (h *DomainHandler) domainAccount(c *gin.Context) (model.Domain, model.Domai
 	return domain, account, true
 }
 
-func dnsAccount(account model.DomainAccount) dnsservice.Account {
-	return dnsservice.Account{Provider: account.Provider, AccessKey: account.AccessKey, SecretKey: account.SecretKey}
+func dnsAccountWithProxy(db *gorm.DB, account model.DomainAccount) (dnsservice.Account, error) {
+	resolved := dnsservice.Account{Provider: account.Provider, AccessKey: account.AccessKey, SecretKey: account.SecretKey}
+	proxySetting, err := domainAccountProxy(db, account)
+	if err != nil {
+		return resolved, err
+	}
+	if proxySetting == nil {
+		return resolved, nil
+	}
+	client, err := proxyservice.Client(proxySetting, 30*time.Second)
+	if err != nil {
+		return resolved, err
+	}
+	resolved.HTTPClient = client
+	resolved.ProxyURL = proxyservice.URL(*proxySetting).String()
+	return resolved, nil
 }
 
 func isTencentDNS(provider string) bool {

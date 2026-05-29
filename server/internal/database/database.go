@@ -39,18 +39,27 @@ func AutoMigrate(db *gorm.DB) error {
 			return err
 		}
 	}
+	if db.Migrator().HasTable(&model.DeployAccount{}) && db.Migrator().HasColumn(&model.DeployAccount{}, "site_name") {
+		if err := db.Migrator().DropColumn(&model.DeployAccount{}, "site_name"); err != nil {
+			return err
+		}
+	}
 	return db.Set("gorm:table_options", "ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='QDL系统数据表'").AutoMigrate(
 		&model.User{},
 		&model.DomainAccount{},
 		&model.SSLAccount{},
+		&model.DeployAccount{},
 		&model.Domain{},
 		&model.DomainRecord{},
 		&model.Certificate{},
 		&model.AutoTask{},
 		&model.OperationLog{},
 		&model.LoginLog{},
+		&model.DomainAccountLog{},
 		&model.CertificateLog{},
+		&model.CertificateDeployLog{},
 		&model.SystemSetting{},
+		&model.ProxySetting{},
 		&model.NotificationSetting{},
 	)
 }

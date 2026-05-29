@@ -34,15 +34,25 @@ func (h *DomainAccountHandler) Test(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 15*time.Second)
 	defer cancel()
 
-	result, err := dnsservice.TestAccount(ctx, dnsservice.Account{
-		Provider:  account.Provider,
-		AccessKey: account.AccessKey,
-		SecretKey: account.SecretKey,
-	})
+	dnsAccount, err := dnsAccountWithProxy(h.db, account)
 	if err != nil {
 		fail(c, http.StatusBadRequest, err.Error())
 		return
 	}
+	result, err := dnsservice.TestAccount(ctx, dnsservice.Account{
+		Provider:   dnsAccount.Provider,
+		AccessKey:  dnsAccount.AccessKey,
+		SecretKey:  dnsAccount.SecretKey,
+		ProxyURL:   dnsAccount.ProxyURL,
+		HTTPClient: dnsAccount.HTTPClient,
+	})
+	trace := dnsTrace(account, "TestAccount", gin.H{"provider": account.Provider}, result, err)
+	if err != nil {
+		logDomainAccount(h.db, account, 0, account.Name, "test", "failed", err.Error(), trace)
+		fail(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	logDomainAccount(h.db, account, 0, account.Name, "test", "success", result.Message, trace)
 
 	now := time.Now().Format(time.RFC3339)
 	account.LastTestAt = &now

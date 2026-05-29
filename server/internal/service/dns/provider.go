@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -23,9 +24,11 @@ import (
 )
 
 type Account struct {
-	Provider  string
-	AccessKey string
-	SecretKey string
+	Provider   string
+	AccessKey  string
+	SecretKey  string
+	ProxyURL   string
+	HTTPClient *http.Client
 }
 
 type DomainItem struct {
@@ -197,11 +200,33 @@ func normalizeProviderRecordInput(account Account, input *RecordInput) {
 type aliyunProvider struct{}
 
 func newAliyunClient(account Account) (*alidns.Client, error) {
-	return alidns.NewClient(&openapi.Config{
+	cfg := &openapi.Config{
 		AccessKeyId:     tea.String(account.AccessKey),
 		AccessKeySecret: tea.String(account.SecretKey),
 		Endpoint:        tea.String("alidns.cn-hangzhou.aliyuncs.com"),
-	})
+	}
+	applyAliyunProxy(cfg, account.ProxyURL)
+	return alidns.NewClient(cfg)
+}
+
+func applyAliyunProxy(cfg *openapi.Config, proxyURL string) {
+	if strings.TrimSpace(proxyURL) == "" {
+		return
+	}
+	parsed, err := url.Parse(proxyURL)
+	if err != nil {
+		return
+	}
+	switch parsed.Scheme {
+	case "http":
+		cfg.HttpProxy = tea.String(proxyURL)
+		cfg.HttpsProxy = tea.String(proxyURL)
+	case "https":
+		cfg.HttpsProxy = tea.String(proxyURL)
+	case "socks5", "socks5h":
+		cfg.Socks5Proxy = tea.String(proxyURL)
+		cfg.Socks5NetWork = tea.String("tcp")
+	}
 }
 
 func (aliyunProvider) Test(ctx context.Context, account Account) (*TestResult, error) {
@@ -337,6 +362,9 @@ func newTencentClient(account Account) (*dnspod.Client, error) {
 	cred := common.NewCredential(account.AccessKey, account.SecretKey)
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Endpoint = "dnspod.tencentcloudapi.com"
+	if strings.HasPrefix(account.ProxyURL, "http://") || strings.HasPrefix(account.ProxyURL, "https://") {
+		cpf.HttpProfile.Proxy = account.ProxyURL
+	}
 	return dnspod.NewClient(cred, "", cpf)
 }
 
@@ -644,7 +672,11 @@ func cfRequest(ctx context.Context, account Account, method, path string, payloa
 	}
 	req.Header.Set("Authorization", "Bearer "+account.SecretKey)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	client := account.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
